@@ -9,6 +9,7 @@ class FreTS_pkg_v2(Base_pkg):
     _tags = {
         "info:name": "FreTS",
         "info:compute": 2,
+        "info:y_type": ["numeric"],
         "authors": ["echo-xiao"],
         "capability:exogenous": True,
         "capability:multivariate": True,
@@ -57,7 +58,7 @@ class FreTS_pkg_v2(Base_pkg):
             The key ``"datamodule_cfg"`` inside each dict is forwarded to
             the datamodule constructor.
         """
-        from pytorch_forecasting.metrics import MAE, SMAPE
+        from pytorch_forecasting.metrics import MAE, RMSE, SMAPE
 
         params = [
             {},
@@ -76,6 +77,25 @@ class FreTS_pkg_v2(Base_pkg):
                 embed_size=16,
                 hidden_size=32,
                 loss=MAE(),
+            ),
+            dict(
+                embed_size=16,
+                hidden_size=32,
+                sparsity_threshold=0.0,
+                loss=RMSE(),
+            ),
+            dict(
+                embed_size=16,
+                hidden_size=32,
+                optimizer="adamw",
+                lr_scheduler="cosine_annealing",
+                lr_scheduler_params=dict(T_max=2),
+            ),
+            dict(
+                embed_size=16,
+                hidden_size=32,
+                channel_independence=False,
+                datamodule_cfg=dict(max_encoder_length=12, max_prediction_length=4),
             ),
         ]
 

@@ -168,6 +168,15 @@ class FreTS(BaseModel):
         else:
             enc = target_past
 
+        if enc.shape[-1] != self.n_channels:
+            raise ValueError(
+                f"{self.__class__.__name__} was built for {self.n_channels} input "
+                f"channels ({self.n_targets} target(s) + {self.n_cont} past "
+                f"continuous covariate(s), taken from the metadata), but the batch "
+                f"provides {enc.shape[-1]}. Check that the metadata passed to the "
+                f"model comes from the same datamodule that produced this batch."
+            )
+
         out = self.model(enc)
         prediction = self.output_projection(out)
         return {"prediction": prediction}

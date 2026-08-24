@@ -99,14 +99,23 @@ class FreTSCore(nn.Module):
     ) -> torch.Tensor:
         """Diagonal complex-valued MLP in the frequency domain.
 
+        The ``"bijd,dd->bijd"`` contraction repeats ``d`` on both operands and on
+        the output, so it is an element-wise multiplication by ``diag(r)`` rather
+        than a dense matrix product: only the diagonal of ``r`` and ``i`` takes
+        part in the computation. This mirrors the reference FreTS implementation
+        (https://github.com/aikunyi/FreTS) and is kept as-is so that results stay
+        comparable with the paper.
+
         Parameters
         ----------
         x : torch.Tensor
             Complex tensor of shape ``(B, nd, dim//2+1, embed_size)``.
         r : torch.Tensor
-            Real weight matrix of shape ``(embed_size, embed_size)``.
+            Real weight matrix of shape ``(embed_size, embed_size)``. Only its
+            diagonal is used, see the note above.
         i : torch.Tensor
-            Imaginary weight matrix of shape ``(embed_size, embed_size)``.
+            Imaginary weight matrix of shape ``(embed_size, embed_size)``. Only
+            its diagonal is used, see the note above.
         rb : torch.Tensor
             Real bias of shape ``(embed_size,)``.
         ib : torch.Tensor
@@ -131,19 +140,13 @@ class FreTSCore(nn.Module):
         y = F.softshrink(y, lambd=self.sparsity_threshold)
         return torch.view_as_complex(y)
 
-    def _mlp_temporal(self, x: torch.Tensor, B: int, N: int, L: int) -> torch.Tensor:
+    def _mlp_temporal(self, x: torch.Tensor) -> torch.Tensor:
         """Frequency temporal learner: FFT along the time dimension.
 
         Parameters
         ----------
         x : torch.Tensor
             Shape ``(B, N, T, embed_size)``.
-        B : int
-            Batch size.
-        N : int
-            Number of channels.
-        L : int
-            Sequence length.
 
         Returns
         -------
@@ -154,19 +157,13 @@ class FreTSCore(nn.Module):
         y = self._fre_mlp(x, self.r2, self.i2, self.rb2, self.ib2)
         return torch.fft.irfft(y, n=self.context_length, dim=2, norm="ortho")
 
-    def _mlp_channel(self, x: torch.Tensor, B: int, N: int, L: int) -> torch.Tensor:
+    def _mlp_channel(self, x: torch.Tensor) -> torch.Tensor:
         """Frequency channel learner: FFT along the channel dimension.
 
         Parameters
         ----------
         x : torch.Tensor
             Shape ``(B, N, T, embed_size)``.
-        B : int
-            Batch size.
-        N : int
-            Number of channels.
-        L : int
-            Sequence length.
 
         Returns
         -------
@@ -192,15 +189,15 @@ class FreTSCore(nn.Module):
         torch.Tensor
             Forecast of shape ``(B, prediction_length, N)``.
         """
-        B, T, N = x.shape
+        B, _, N = x.shape
 
         x = self._token_emb(x)
         bias = x
 
         if not self.channel_independence:
-            x = self._mlp_channel(x, B, N, T)
+            x = self._mlp_channel(x)
 
-        x = self._mlp_temporal(x, B, N, T)
+        x = self._mlp_temporal(x)
         x = x + bias
 
         x = self.fc(x.reshape(B, N, -1)).permute(0, 2, 1)
