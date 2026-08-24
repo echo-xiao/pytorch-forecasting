@@ -9,7 +9,7 @@ class NHiTS_pkg_v2(Base_pkg):
     _tags = {
         "info:name": "NHiTS_v2",
         "info:compute": 2,
-        "authors": ["echo-xiao"],
+        "authors": ["jdb78", "echo-xiao"],
         "capability:exogenous": False,
         "capability:multivariate": False,
         "capability:pred_int": True,

@@ -1,3 +1,14 @@
+"""NHiTS v2 tests that the generic v2 test framework does not cover.
+
+The ``forward`` / ``fit`` / ``predict`` contract, checkpointing and the
+architecture and loss variants listed in
+``NHiTS_pkg_v2.get_test_train_params`` are all exercised by
+``pytorch_forecasting.tests.test_all_v2``. Only NHiTS-specific behaviour that
+the framework cannot reach lives here: the ``backcast_loss_ratio`` guard, the
+default loss, the encoder-mask dimensionality branches, and the numerical
+comparison against the v1 implementation.
+"""
+
 import lightning.pytorch as pl
 import numpy as np
 import pandas as pd
@@ -6,8 +17,7 @@ import torch
 
 from pytorch_forecasting.data import TimeSeries
 from pytorch_forecasting.data.data_module import EncoderDecoderTimeSeriesDataModule
-from pytorch_forecasting.metrics import MAE, SMAPE, QuantileLoss
-from pytorch_forecasting.models.nhits._nhits_pkg_v2 import NHiTS_pkg_v2
+from pytorch_forecasting.metrics import MAE, QuantileLoss
 from pytorch_forecasting.models.nhits._nhits_v2 import NHiTS_v2
 
 CONTEXT_LENGTH = 6
@@ -56,87 +66,6 @@ def sample_datamodule():
     return dm
 
 
-def test_nhits_v2_forward_shapes(sample_datamodule):
-    """Test that forward pass returns correct output shapes.
-
-    Parameters
-    ----------
-    sample_datamodule : EncoderDecoderTimeSeriesDataModule
-        Fixture providing the data module.
-    """
-    dm = sample_datamodule
-    metadata = dm.metadata
-    model = NHiTS_v2(loss=MAE(), metadata=metadata)
-
-    batch_x, _ = next(iter(dm.train_dataloader()))
-
-    with torch.no_grad():
-        out = model(batch_x)
-
-    assert "prediction" in out
-    assert "backcast" in out
-    assert "block_forecasts" in out
-    assert "block_backcasts" in out
-
-    pred = out["prediction"]
-    assert pred.ndim == 3, f"prediction must be 3D, got {pred.ndim}D"
-    assert pred.shape[1] == PREDICTION_LENGTH
-    assert pred.shape[2] == 1
-
-    backcast = out["backcast"]
-    assert backcast.ndim == 3, f"backcast must be 3D, got {backcast.ndim}D"
-    assert backcast.shape[1] == CONTEXT_LENGTH
-    assert backcast.shape[2] == 1
-
-
-def test_nhits_v2_training_step(sample_datamodule):
-    """Test that training_step returns a scalar loss with gradients.
-
-    Parameters
-    ----------
-    sample_datamodule : EncoderDecoderTimeSeriesDataModule
-        Fixture providing the data module.
-    """
-    dm = sample_datamodule
-    metadata = dm.metadata
-    model = NHiTS_v2(loss=MAE(), metadata=metadata)
-
-    batch = next(iter(dm.train_dataloader()))
-    result = model.training_step(batch, batch_idx=0)
-
-    assert "loss" in result
-    loss = result["loss"]
-    assert isinstance(loss, torch.Tensor)
-    assert loss.ndim == 0
-    assert not torch.isnan(loss)
-    loss.backward()
-
-
-@pytest.mark.parametrize("backcast_loss_ratio", [0.0, 0.1, 0.5])
-def test_nhits_v2_backcast_loss_ratio(sample_datamodule, backcast_loss_ratio):
-    """Test that backcast_loss_ratio affects the training loss.
-
-    Parameters
-    ----------
-    sample_datamodule : EncoderDecoderTimeSeriesDataModule
-        Fixture providing the data module.
-    backcast_loss_ratio : float
-        Weight of the backcast loss, parametrized over multiple values.
-    """
-    dm = sample_datamodule
-    metadata = dm.metadata
-    model = NHiTS_v2(
-        loss=MAE(), metadata=metadata, backcast_loss_ratio=backcast_loss_ratio
-    )
-
-    batch = next(iter(dm.train_dataloader()))
-    result = model.training_step(batch, batch_idx=0)
-
-    loss = result["loss"]
-    assert not torch.isnan(loss)
-    assert loss.item() >= 0.0
-
-
 def test_nhits_v2_backcast_loss_ratio_rejects_quantile_loss(sample_datamodule):
     """backcast_loss_ratio > 0 must be rejected for multi-output (quantile) losses.
 
@@ -159,59 +88,6 @@ def test_nhits_v2_backcast_loss_ratio_rejects_quantile_loss(sample_datamodule):
         )
 
 
-@pytest.mark.parametrize(
-    "n_blocks, hidden_size",
-    [
-        ([1, 1, 1], 64),
-        ([1, 1], 128),
-        ([1], 32),
-    ],
-)
-def test_nhits_v2_architecture_variants(sample_datamodule, n_blocks, hidden_size):
-    """Test that different n_blocks and hidden_size configs run without error.
-
-    Parameters
-    ----------
-    sample_datamodule : EncoderDecoderTimeSeriesDataModule
-        Fixture providing the data module.
-    n_blocks : list of int
-        Number of blocks per stack.
-    hidden_size : int
-        Width of the MLP layers.
-    """
-    dm = sample_datamodule
-    metadata = dm.metadata
-    model = NHiTS_v2(
-        loss=MAE(), metadata=metadata, n_blocks=n_blocks, hidden_size=hidden_size
-    )
-
-    batch_x, _ = next(iter(dm.train_dataloader()))
-    with torch.no_grad():
-        out = model(batch_x)
-
-    assert out["prediction"].shape[1] == PREDICTION_LENGTH
-
-
-def test_nhits_v2_pkg_get_cls():
-    """Test that NHiTS_pkg_v2.get_cls() returns NHiTS_v2."""
-    assert NHiTS_pkg_v2.get_cls() is NHiTS_v2
-
-
-def test_nhits_v2_pkg_naming_convention():
-    """Test that pkg class name follows the convention NHiTS_pkg_v2."""
-    assert NHiTS_pkg_v2.__name__ == "NHiTS_pkg_v2"
-
-
-def test_nhits_v2_pkg_test_train_params():
-    """Test that get_test_train_params returns a non-empty list of dicts."""
-    params = NHiTS_pkg_v2.get_test_train_params()
-    assert isinstance(params, list)
-    assert len(params) > 0
-    for p in params:
-        assert isinstance(p, dict)
-        assert "datamodule_cfg" in p
-
-
 def test_nhits_v2_default_loss(sample_datamodule):
     """Test that loss=None falls back to MASE as default.
 
@@ -225,48 +101,6 @@ def test_nhits_v2_default_loss(sample_datamodule):
     dm = sample_datamodule
     model = NHiTS_v2(metadata=dm.metadata)
     assert isinstance(model.loss, MASE)
-
-
-def test_nhits_v2_validation_step(sample_datamodule):
-    """Test that validation_step returns a scalar val_loss.
-
-    Parameters
-    ----------
-    sample_datamodule : EncoderDecoderTimeSeriesDataModule
-        Fixture providing the data module.
-    """
-    dm = sample_datamodule
-    model = NHiTS_v2(loss=MAE(), metadata=dm.metadata)
-
-    batch = next(iter(dm.train_dataloader()))
-    result = model.validation_step(batch, batch_idx=0)
-
-    assert "val_loss" in result
-    loss = result["val_loss"]
-    assert isinstance(loss, torch.Tensor)
-    assert loss.ndim == 0
-    assert not torch.isnan(loss)
-
-
-def test_nhits_v2_test_step(sample_datamodule):
-    """Test that test_step returns a scalar test_loss.
-
-    Parameters
-    ----------
-    sample_datamodule : EncoderDecoderTimeSeriesDataModule
-        Fixture providing the data module.
-    """
-    dm = sample_datamodule
-    model = NHiTS_v2(loss=MAE(), metadata=dm.metadata)
-
-    batch = next(iter(dm.train_dataloader()))
-    result = model.test_step(batch, batch_idx=0)
-
-    assert "test_loss" in result
-    loss = result["test_loss"]
-    assert isinstance(loss, torch.Tensor)
-    assert loss.ndim == 0
-    assert not torch.isnan(loss)
 
 
 def test_nhits_v2_forward_with_2d_mask(sample_datamodule):
@@ -322,7 +156,7 @@ def test_nhits_v2_forward_with_3d_mask(sample_datamodule):
 
 
 # ---------------------------------------------------------------------------
-# Slow test: NHiTS v1 vs v2 numerical validation
+# NHiTS v1 vs v2 numerical validation
 # ---------------------------------------------------------------------------
 
 _CMP_N_SERIES = 4
@@ -347,7 +181,6 @@ def _make_comparison_dataframe():
     return pd.DataFrame(rows)
 
 
-@pytest.mark.slow
 def test_nhits_v1_v2_val_loss_comparable():
     """Numerical validation: NHiTS v2 val MAE must be comparable to v1.
 
@@ -357,10 +190,6 @@ def test_nhits_v1_v2_val_loss_comparable():
     1. Both models converge (val MAE < 1.0 on normalised sine data).
     2. The v2 val MAE is within 3x of the v1 val MAE, confirming the rework
        has not introduced a systematic numerical regression.
-
-    Run explicitly with::
-
-        pytest -m slow tests/test_models/test_nhits_v2.py
     """
     from pytorch_forecasting.data.timeseries import TimeSeriesDataSet
     from pytorch_forecasting.metrics import MAE as MAE_v1
@@ -487,7 +316,6 @@ def test_nhits_v1_v2_val_loss_comparable():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_nhits_v1_v2_identical_outputs_with_shared_weights():
     """Verify that NHiTS v1 and v2 produce bit-identical outputs given the same weights.
 
@@ -505,11 +333,6 @@ def test_nhits_v1_v2_identical_outputs_with_shared_weights():
 
     A failure here indicates a genuine numerical divergence between the two
     API layers, independent of data-pipeline or normalisation differences.
-
-    Run explicitly with::
-
-        pytest -m slow tests/test_models/test_nhits_v2.py \
-            -k test_nhits_v1_v2_identical_outputs_with_shared_weights
     """
     from pytorch_forecasting.data.timeseries import TimeSeriesDataSet
     from pytorch_forecasting.models import NHiTS as NHiTS_v1
