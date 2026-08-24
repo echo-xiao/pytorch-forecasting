@@ -99,7 +99,6 @@ class NHiTS_v2(BaseModel):
 
     def __init__(
         self,
-        *,
         naive_level: bool = True,
         shared_weights: bool = True,
         activation: str = "ReLU",
