@@ -7,7 +7,7 @@ from pytorch_forecasting.layers._attention import (
     FullAttention,
     TriangularCausalMask,
 )
-from pytorch_forecasting.layers._blocks import ResidualBlock
+from pytorch_forecasting.layers._blocks import FreTSCore, ResidualBlock
 from pytorch_forecasting.layers._decomposition import SeriesDecomposition
 from pytorch_forecasting.layers._embeddings import (
     DataEmbedding_inverted,
@@ -20,7 +20,6 @@ from pytorch_forecasting.layers._encoders import (
     Encoder,
     EncoderLayer,
 )
-from pytorch_forecasting.layers._frets import FreTSCore
 from pytorch_forecasting.layers._mlp import FullyConnectedModule
 from pytorch_forecasting.layers._normalization import RevIN
 from pytorch_forecasting.layers._output._flatten_head import (
