@@ -11,7 +11,11 @@ from pytorch_forecasting.data.timeseries import TimeSeries
 
 
 def _make_ts(n_series: int = 20, length: int = 40, offset: float = 100.0) -> TimeSeries:
-    """合成数据集:连续特征 ``x`` 远离 0(~offset),便于看出标准化;目标 ``y`` 是正弦。"""
+    """Synthetic dataset whose continuous feature ``x`` sits far from zero.
+
+    ``x`` is centred around ``offset`` so the effect of standardisation is easy
+    to see, while the target ``y`` is a plain sine wave.
+    """
     rows = []
     for i in range(n_series):
         for t in range(length):
@@ -585,11 +589,11 @@ def test_fit_scalers_standardizes_train_feature():
         scalers={"x": StandardScaler()},
         batch_size=8,
     )
-    train_idx = torch.arange(len(ds))  # 本单测在全部序列上 fit
+    train_idx = torch.arange(len(ds))  # this test fits on every series
     dm._fit_scalers(train_idx)
 
     assert dm._feature_scalers_fitted is True
-    # transform 原始 train 列,检查已标准化(~0 均值,~1 标准差)
+    # transform the raw train column, expecting ~0 mean and ~1 std
     names = dm.time_series_metadata["cols"]["x"]
     oi = dm.continuous_indices[names.index("x") if "x" in names else 0]
     raw = torch.cat([ds[i.item()]["x"][:, oi] for i in train_idx], dim=0)
